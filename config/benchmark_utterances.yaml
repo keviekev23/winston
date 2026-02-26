@@ -1,0 +1,165 @@
+# Benchmark utterance set for Whisper STT calibration and WER evaluation.
+#
+# Designed for kitchen speech from Kevin's household context.
+# Three difficulty tiers, 15 utterances each = 45 total.
+#
+# Easy:   short commands, common vocabulary, unambiguous pronunciation
+# Medium: longer sentences, natural phrasing, family names, compound instructions
+# Hard:   culinary vocabulary, fractions, homophones, proper names, fast/noisy speech
+#
+# Edit freely — just keep the id values stable once you've recorded a benchmark set,
+# since eval results are keyed to these ids.
+
+utterances:
+
+  # ---- EASY (15) -----------------------------------------------------------
+  # Short, direct, common vocabulary. Goal: establish ceiling for model capability.
+
+  - id: easy_001
+    text: "Set timer for five minutes"
+    difficulty: easy
+
+  - id: easy_002
+    text: "What's the next step?"
+    difficulty: easy
+
+  - id: easy_004
+    text: "Turn off the oven"
+    difficulty: easy
+
+  - id: easy_005
+    text: "Add two cups of water"
+    difficulty: easy
+
+  - id: easy_008
+    text: "Is the water boiling?"
+    difficulty: easy
+
+  - id: easy_012
+    text: "Stop timer"
+    difficulty: easy
+
+  - id: easy_013
+    text: "What's next?"
+    difficulty: easy
+
+  - id: easy_014
+    text: "Can you help with this part?"
+    difficulty: easy
+
+  - id: easy_015
+    text: "Stir every two minutes"
+    difficulty: easy
+
+
+  # ---- MEDIUM (15) ---------------------------------------------------------
+  # Natural speech, longer sentences, family names, numbers.
+  # Goal: measure real-world degradation from easy baseline.
+
+  - id: medium_001
+    text: "Can you remind me how long the chicken needs to stay in the oven?"
+    difficulty: medium
+
+  - id: medium_002
+    text: "I think we need to add more seasoning, what do you think?"
+    difficulty: medium
+
+  - id: medium_003
+    text: "June, can you hand me the measuring cup please?"
+    difficulty: medium
+    notes: "Tests recognition of household name 'June'"
+
+  - id: medium_005
+    text: "The recipe says to fold in the egg whites gently"
+    difficulty: medium
+
+  - id: medium_008
+    text: "What are the next three steps?"
+    difficulty: medium
+
+  - id: medium_009
+    text: "Is there a way to substitute buttermilk?"
+    difficulty: medium
+
+  - id: medium_010
+    text: "What's the difference between sautéing and stir-frying?"
+    difficulty: medium
+
+  - id: medium_015
+    text: "Set a timer for one hour and twenty minutes"
+    difficulty: medium
+
+
+  # ---- HARD (15) -----------------------------------------------------------
+  # Culinary vocabulary, fractions, homophones, family context, fast speech.
+  # Goal: expose the model's failure modes for flywheel targeting.
+
+  - id: hard_001
+    text: "Add a quarter teaspoon of cayenne pepper to the marinade"
+    difficulty: hard
+    notes: "Fraction + uncommon culinary term"
+
+  - id: hard_002
+    text: "I need to check the thyme"
+    difficulty: hard
+    notes: "Homophone: thyme vs time — Whisper often gets this wrong in cooking context"
+
+  - id: hard_003
+    text: "Julienne the carrots into matchstick-sized pieces"
+    difficulty: hard
+    notes: "Uncommon culinary verb, likely OOV for Small.en"
+
+  - id: hard_004
+    text: "The recipe calls for one and a half pound of boneless skinless chicken thighs"
+    difficulty: hard
+    notes: "Long utterance, mixed fraction, compound noun"
+
+  - id: hard_005
+    text: "Set timer for forty-five minutes at three hundred fifty degrees"
+    difficulty: hard
+    notes: "Two numbers in one utterance"
+
+  - id: hard_006
+    text: "Deglaze the pan with a quarter cup of dry white wine"
+    difficulty: hard
+    notes: "Culinary term + fraction"
+
+  - id: hard_007
+    text: "Blanch the broccoli for two minutes then transfer to an ice bath"
+    difficulty: hard
+    notes: "Culinary technique, sequential instruction"
+
+  - id: hard_009
+    text: "We're making the dish that Kevin likes from last Thanksgiving"
+    difficulty: hard
+    notes: "Family context, temporal reference — tests personalization signals"
+
+  - id: hard_010
+    text: "Is this the same amount we used when we made it for June's birthday?"
+    difficulty: hard
+    notes: "Family name in possessive, episode reference"
+
+  - id: hard_011
+    text: "Add a tablespoon of Worcestershire sauce and stir it in"
+    difficulty: hard
+    notes: "Worcestershire is one of the hardest English words to transcribe correctly"
+
+  - id: hard_012
+    text: "I need a tablespoon and a half of cornstarch dissolved in cold water"
+    difficulty: hard
+    notes: "Mixed fraction embedded in instruction"
+
+  - id: hard_013
+    text: "Can you help me adapt this recipe to be gluten-free for June's coworker?"
+    difficulty: hard
+    notes: "Compound request, proper name, dietary term"
+
+  - id: hard_014
+    text: "The meat thermometer reads one sixty-five, is that done?"
+    difficulty: hard
+    notes: "Abbreviated number + yes/no question — common kitchen phrasing"
+
+  - id: hard_015
+    text: "Bring the mixture to a gentle simmer, not a full rolling boil"
+    difficulty: hard
+    notes: "Culinary precision vocabulary"

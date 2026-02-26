@@ -52,6 +52,7 @@ Winston ("Sous Chef") is a personalized household AI assistant research prototyp
 3. **Crosses subsystem boundaries or affects architecture?** Surface it to Kevin with your recommendation before proceeding.
 4. **Uncertain between approaches?** Present both with tradeoffs.
 5. **Something in a doc seems wrong or outdated?** Say so. Docs should evolve with the project.
+6. **Starting phase implementation?** For each deliverable, validate before coding: (a) *what concrete tool/command makes it happen?* — no "batch upload" without naming the mechanism; (b) *what benchmark/baseline measures success?* — no "measure WER" without a test set; (c) *which parameters need empirical calibration?* — no thresholds until you know how to validate them.
 
 ## Common Pitfalls
 

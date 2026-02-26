@@ -1,0 +1,56 @@
+mqtt:
+  host: localhost
+  port: 1883
+  client_id: souschef-perception
+  keepalive: 60
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 512        # samples per callback (~32ms at 16kHz)
+  dtype: float32
+
+vad:
+  threshold_onset: 0.5   # speech probability to start buffering
+  threshold_offset: 0.3  # speech probability to stop buffering
+  min_speech_frames: 3   # consecutive frames above onset threshold (3 * 32ms ≈ 100ms)
+  silence_frames: 10     # consecutive frames below offset to end utterance (10 * 32ms ≈ 320ms)
+  max_speech_seconds: 30 # hard cap on buffered audio before forced transcription
+
+stt:
+  model: mlx-community/whisper-small.en-mlx
+  language: en
+  confidence_threshold: 0.7   # calibration is weak (0.12 Spearman) — threshold direction: RAISE to widen upload net, LOWER to narrow it. Recalibrate after first flywheel cycle.
+
+diarization:
+  enabled: false              # enabled after enrollment is complete
+  confidence_threshold: 0.7
+  embeddings_dir: data/profiles
+
+scene:
+  enabled: false              # enable after Phase A Layer 4
+  model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+  snapshot_interval_seconds: 60   # ~32s inference on M2 Pro MPS; interval must be > inference time
+  confidence_threshold: 0.7
+  images_dir: data/collection/images
+
+data_collection:
+  enabled: true
+  audio_dir: data/collection/audio
+  images_dir: data/collection/images
+  save_all: true             # false = only save low-confidence samples
+
+memory_monitor:
+  interval_seconds: 30
+  alert_headroom_mb: 2048    # alert if free < 2GB
+
+flywheel:
+  # rclone remote name — set this after running 'rclone config' (see docs/flywheel_setup.md)
+  rclone_remote: "gdrive"
+  # Google Drive folder paths (relative to Drive root)
+  drive_data_folder: "winston-flywheel/data"
+  drive_models_folder: "winston-flywheel/models"
+  # Upload filtering: always uploads low-confidence samples; this controls high-conf sampling
+  high_confidence_sample_rate: 1.0    # upload everything for first cycle — calibration is too weak to filter meaningfully. Tune down after cycle 1.
+  # Local output path for downloaded/converted adapters
+  adapters_dir: data/adapters

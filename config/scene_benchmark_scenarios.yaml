@@ -1,0 +1,140 @@
+# Benchmark scenario set for SmolVLM2 scene understanding evaluation.
+#
+# Designed for Kevin's kitchen, similar structure to benchmark_utterances.yaml.
+# Three difficulty tiers, ~18 scenarios total.
+#
+# Easy:   clear single activity, obvious objects, uncluttered frame
+# Medium: natural kitchen activity, multiple objects, family member possibly present
+# Hard:   ambiguous activity, cluttered counter, multiple people, unusual angles
+#
+# How to record: python scripts/create_scene_benchmark.py
+# How to evaluate: python scripts/evaluate_scene.py
+#
+# Keep ids stable once recorded — eval results are keyed to these ids.
+
+scenarios:
+
+  # ---- EASY (6) ---------------------------------------------------------------
+  # Clear single activity, unambiguous. Establishes model capability ceiling.
+
+  - id: easy_001
+    difficulty: easy
+    activity_ground_truth: idle
+    objects_ground_truth: [counter, stove]
+    notes: "Empty kitchen, no people, clean counters. Establishes baseline scene."
+
+  - id: easy_002
+    difficulty: easy
+    activity_ground_truth: idle
+    objects_ground_truth: [counter, sink, faucet]
+    notes: "Empty kitchen with sink visible. Different angle from easy_001."
+
+  - id: easy_003
+    difficulty: easy
+    activity_ground_truth: cooking
+    objects_ground_truth: [pot, stove]
+    notes: "Single pot on stove, burner on. No person in frame."
+
+  - id: easy_004
+    difficulty: easy
+    activity_ground_truth: cooking
+    objects_ground_truth: [cutting board, knife, person]
+    notes: "One person at cutting board with knife, no food yet. Clear cooking posture."
+
+  - id: easy_005
+    difficulty: easy
+    activity_ground_truth: idle
+    objects_ground_truth: [counter, bowl, eggs]
+    notes: "Staged items on counter, no activity. Tests object detection without action."
+
+  - id: easy_006
+    difficulty: easy
+    activity_ground_truth: cooking
+    objects_ground_truth: [pan, stove, spatula, person]
+    notes: "Person visibly using spatula at stove. Unambiguous cooking."
+
+
+  # ---- MEDIUM (6) -------------------------------------------------------------
+  # Natural kitchen activity, multiple objects, occasionally ambiguous.
+
+  - id: medium_001
+    difficulty: medium
+    activity_ground_truth: cooking
+    objects_ground_truth: [cutting board, knife, vegetables, onion, person]
+    notes: "Person chopping onion. Classic cooking task. Tests culinary object detection."
+
+  - id: medium_002
+    difficulty: medium
+    activity_ground_truth: cooking
+    objects_ground_truth: [pot, stove, spoon, person]
+    notes: "Person stirring pot on stove. Tests activity when hand motion is the key signal."
+
+  - id: medium_003
+    difficulty: medium
+    activity_ground_truth: cooking
+    objects_ground_truth: [bowl, whisk, eggs, person]
+    notes: "Person whisking eggs in bowl on counter. No heat source visible."
+
+  - id: medium_004
+    difficulty: medium
+    activity_ground_truth: eating
+    objects_ground_truth: [plate, fork, person]
+    notes: "Person eating at counter or table. Tests eating vs cooking distinction."
+
+  - id: medium_005
+    difficulty: medium
+    activity_ground_truth: cooking
+    objects_ground_truth: [counter, cutting board, garlic, herbs, knife, person]
+    notes: "Cluttered prep with garlic and herbs. Multiple small objects — tests object recall."
+
+  - id: medium_006
+    difficulty: medium
+    activity_ground_truth: idle
+    objects_ground_truth: [counter, pot, pan, bowl, person]
+    notes: "Person standing in kitchen not doing anything obvious. Tests idle detection with person present."
+
+
+  # ---- HARD (6) ---------------------------------------------------------------
+  # Ambiguous, cluttered, unusual conditions, or multiple people.
+
+  - id: hard_001
+    difficulty: hard
+    activity_ground_truth: cooking
+    objects_ground_truth: [stove, pot, counter, person]
+    notes: >
+      Person checking a boiling pot — could look like idle from a distance.
+      Tests whether activity is inferred from posture vs objects.
+
+  - id: hard_002
+    difficulty: hard
+    activity_ground_truth: cleaning
+    objects_ground_truth: [sink, faucet, person]
+    notes: "Person washing dishes. Cleaning is the least-represented activity — likely SmolVLM2 weak spot."
+
+  - id: hard_003
+    difficulty: hard
+    activity_ground_truth: cooking
+    objects_ground_truth: [counter, bowl, flour, butter, eggs, person]
+    notes: "Baking prep with flour and butter — less common kitchen scenario, tests generalization."
+
+  - id: hard_004
+    difficulty: hard
+    activity_ground_truth: cooking
+    objects_ground_truth: [cutting board, knife, meat, chicken, person]
+    notes: "Raw chicken on cutting board. Poultry prep — tests recognition of raw protein."
+
+  - id: hard_005
+    difficulty: hard
+    activity_ground_truth: cooking
+    objects_ground_truth: [stove, pan, person]
+    notes: >
+      Two people in the kitchen — one cooking, one nearby but idle.
+      Activity should still be 'cooking'. Tests multi-person scene.
+
+  - id: hard_006
+    difficulty: hard
+    activity_ground_truth: cooking
+    objects_ground_truth: [counter, pot, stove, bowl, cutting board, knife, person]
+    notes: >
+      Fully cluttered counter mid-cook: many items active simultaneously.
+      Tests object precision (hallucination) under complexity.

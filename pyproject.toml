@@ -1,0 +1,63 @@
+[project]
+name = "winston"
+version = "0.1.0"
+description = "Sous Chef — personalized household AI assistant"
+requires-python = ">=3.11"
+
+dependencies = [
+    # Transport
+    "paho-mqtt>=2.0",
+
+    # Audio I/O
+    "sounddevice",
+    "numpy",
+
+    # VAD (Silero) — brings in torch
+    "silero-vad",
+    "torch",
+
+    # STT
+    "mlx-whisper",
+
+    # Speaker ID (Phase A Layer 3)
+    "resemblyzer",
+
+    # Vision (Phase A Layer 4)
+    "transformers>=5.0",
+    "torchvision",
+    "num2words",     # required by SmolVLM processor
+    "Pillow",
+    "opencv-python",
+
+    # Config + utilities
+    "PyYAML",
+    "psutil",
+
+    # Evaluation / benchmarking
+    "jiwer",
+
+    # Episodic memory (Phase D)
+    # "chromadb",
+
+    # Cloud APIs (Phase C+)
+    "anthropic",
+    "openai",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
