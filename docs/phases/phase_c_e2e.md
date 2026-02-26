@@ -37,6 +37,21 @@ Assemble all subsystems into a working cooking assistant. Validate the core valu
 4. **Mental model quality:** After N sessions, accuracy of preference predictions (spot-check)
 5. **Personalization delta:** Compare session 1 vs session 5 metrics
 
+## Additional Deliverable: Real-Time Flywheel Loop
+
+When the cerebrum receives `low_confidence: true` from perception:
+- [ ] Generate a natural clarification request when the ambiguity affects the current response
+  (e.g., "did you say X?", "I can see something changed — what are you working on?")
+- [ ] Store the user's correction in the collection sidecar with `correction_source: "kevin_realtime"`
+- [ ] Corrections are prioritized by the upload/training pipeline over pseudo-labeled samples
+
+Design constraints (defer full design to Phase C implementation):
+- Rate-limit: ask only when ambiguity affects current response AND asking is conversationally natural
+- Threshold requires Phase A failure data to calibrate — do not hard-code
+- STT corrections (`corrected_text`) and VLM corrections (`corrected_activity`) are separate queues
+
+See `docs/architecture/brain.md` — Perception Confidence Integration for storage schema.
+
 ## Research Questions
 
 - Does a stationary multimodal agent provide meaningful value during cooking?
@@ -44,3 +59,4 @@ Assemble all subsystems into a working cooking assistant. Validate the core valu
 - What is the right balance of proactive help vs. waiting to be asked?
 - How quickly does personalization (via flywheel) produce noticeable improvements?
 - What are the failure modes that break user trust?
+- **Does real-time active learning (conversational corrections) produce higher-quality flywheel signal than batch post-session labeling?** Hypothesis: yes — in-the-moment correction has fresher context and unambiguous ground truth. Measure by comparing improvement rate on benchmark between realtime-corrected vs pseudo-labeled samples across flywheel cycles.

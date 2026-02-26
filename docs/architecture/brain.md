@@ -28,6 +28,30 @@ Intelligent orchestrator. The cerebrum owns plan lifecycle and coordinates execu
 - Process low-confidence perception flags and strategize natural clarification approaches
 - Multi-task coordination ("your pasta is almost done, start plating while I watch the sauce")
 
+### Perception Confidence Integration
+
+When the cerebrum receives `low_confidence: true` on a transcript or scene snapshot, it can ask
+the user for clarification naturally in conversation. This is **dual-purpose**:
+
+1. **Immediate**: resolves the ambiguity so the current response is accurate
+2. **Flywheel**: the user's correction is stored as a priority labeled training sample
+
+Correction storage format (additions to existing WAV/image sidecar JSON):
+```json
+{
+  "corrected_text":     "add the carrots",
+  "corrected_activity": "cooking",
+  "correction_source":  "kevin_realtime",
+  "correction_timestamp": "..."
+}
+```
+
+**Rate-limit constraint**: Ask only when (a) the ambiguity affects the current plan/response AND
+(b) asking is natural given conversation state. Do not surface every low-confidence event — that
+becomes an interrogation. This threshold requires Phase A failure data to calibrate empirically.
+
+*Implementation deferred to Phase C. See `docs/phases/phase_c_e2e.md`.*
+
 ### Memory Operations
 - Maintain and query mental model of family/users during sessions
 - Generate session summaries for episodic memory (see Session Types below)
