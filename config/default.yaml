@@ -28,7 +28,7 @@ diarization:
   embeddings_dir: data/profiles
 
 scene:
-  enabled: false              # enable after Phase A Layer 4
+  enabled: true               # Phase A Layer 4 validated (2026-02-26) — enabled for collection
   model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
   snapshot_interval_seconds: 60   # ~32s inference on M2 Pro MPS; interval must be > inference time
   confidence_threshold: 0.7

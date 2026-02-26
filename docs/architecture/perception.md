@@ -40,10 +40,45 @@ All perception outputs include a confidence score (0.0-1.0). Low-confidence outp
 
 ## Data Collection for Fine-Tuning Flywheel
 
-- All inference inputs/outputs logged locally with timestamps and confidence scores
-- Raw audio stored as WAV, scene frames as JPEG
-- Low-confidence samples prioritized as training candidates
-- Batch upload to cloud on configurable schedule (default: daily)
-- Cloud labeling pipeline: Whisper Large-v3 (STT) + GPT-4o/Claude (VLM) + multi-model consensus
-- QLoRA fine-tuning on cloud GPU → adapter download → local hot-swap
-- Target: meaningful personalization improvement within 2-4 flywheel cycles
+### Population Separation (critical)
+
+| Population | Location | Purpose |
+|-----------|----------|---------|
+| **Benchmark** | `data/benchmark/` | Fixed, deliberately recorded, verified GT. Measures model quality. **Never used for training.** |
+| **Collection** | `data/collection/` | Real usage. Pseudo-labeled by cloud models. **Never used for evaluation.** |
+
+Mixing these produces circular evaluation: the model learns the test set, benchmark WER drops,
+but real-world quality is unchanged.
+
+### STT Collection & Training
+- All utterances saved as WAV + JSON sidecar (`save_all: true` until confidence calibration improves)
+- Sidecar includes: transcript, confidence, speaker_id, low_confidence flag
+- Phase C addition: `corrected_text` + `correction_source: "kevin_realtime"` for in-conversation corrections (see `brain.md`)
+- Upload via `scripts/upload_training_data.py` → rclone → Google Drive
+- Cloud Colab: Whisper Large-v3 pseudo-labels → QLoRA fine-tune → adapter export
+- Adapter download via `scripts/download_adapter.py`, hot-swap in config
+
+### VLM Collection & Scene Schema Tiers
+
+Scene output is tiered by empirically measured reliability (calibrated per cycle via `label_scene_data.py --report`):
+
+| Tier | Criteria | Brain behavior |
+|------|----------|---------------|
+| **1 — Trusted** | Activity accuracy > 80%; object recall > 60%, precision > 70% | Brain acts on it directly |
+| **2 — Flagged** | Below thresholds or newly added | Emitted with `low_confidence: true`; brain treats as weak signal |
+| **3 — On-demand** | Complex reasoning (food state, exact object, person count) | Not emitted; cerebrum loads `image_path` and queries Claude with a targeted question |
+
+Initial Tier 1 hypotheses (validate from data): broad activity (cooking vs idle), person presence
+(0 vs ≥1), change detection (pixel MAD — not VLM-dependent), large static objects (stove/fridge/counter/sink).
+
+### VLM Annotation Strategy
+
+Kevin has privileged information Claude lacks — he was present during collection.
+
+| Signal | Who annotates | Rationale |
+|--------|-------------|-----------|
+| Activity label | Kevin via `scripts/review_scene_labels.py` | He knows what he was doing; ground truth is unambiguous |
+| Objects + description | Claude via `scripts/label_scene_data.py` | Better than memory for JPEG content |
+
+Ground truth resolution: `kevin_activity` > `claude_annotation.activity` > "unknown".
+Cycle 2+: Claude drafts → Kevin spot-checks systematic failures only.
