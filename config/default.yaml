@@ -28,11 +28,17 @@ diarization:
   embeddings_dir: data/profiles
 
 scene:
-  enabled: true               # Phase A Layer 4 validated (2026-02-26) — enabled for collection
-  model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
-  snapshot_interval_seconds: 60   # ~32s inference on M2 Pro MPS; interval must be > inference time
+  enabled: true
+  # VLM adapter selection — moondream2 is Phase A primary candidate (~1-3 fps on M2 Pro MPS).
+  # SmolVLM2 disqualified: ~32s/frame, incompatible with ≥1 fps target.
+  # See docs/phases/phase_a_perception.md Evaluated Assumptions for decision rationale.
+  adapter: moondream2
+  model: vikhyatk/moondream2          # HF repo for MoondreamAdapter
+  model_revision: null                # null = latest main; pin to commit once transformers 5.x-compatible tag identified
+  snapshot_interval_seconds: 60       # for scene_service.py passive mode (legacy)
   confidence_threshold: 0.7
   images_dir: data/collection/images
+  # Event detection (detect_event.py) uses confirm_frames from scenario YAML, not here
 
 data_collection:
   enabled: true

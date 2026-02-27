@@ -4,6 +4,57 @@ Operational findings, surprises, and hard-won knowledge. Both Kevin and Claude c
 
 ---
 
+### 2026-02-27 — Phase A Latency Measurements Are Invalid (Concurrent Load)
+
+**Context:** All InternVL2.5-1B latency measurements taken to date were collected with other
+applications running in the background (browser, IDE, other processes). This invalidates them
+as Phase A exit gate evidence.
+
+**What this means:** The ~800ms (max_tokens=5) and ~2s (max_tokens=10) warm latency figures
+in LESSONS_LEARNED are directionally informative but not definitive. The clean-environment
+numbers could be meaningfully better or worse.
+
+**Action required:** Before locking the VLM model for Phase B, run an explicit latency
+benchmark with all other applications closed:
+```bash
+python scripts/detect_event.py \
+  --scenario prompts/event_detection/cooking_prep.yaml \
+  --adapter internvl2_1b \
+  --benchmark-latency 20
+```
+The `--benchmark-latency N` flag is the only valid source of Phase A exit gate latency numbers.
+It prints a clean-environment warning, runs a JIT warmup frame, then N timed frames with stats.
+
+---
+
+### 2026-02-27 — Phase A VLM Latency: Full Benchmark on M2 Pro
+
+**Context:** Attempted to run Moondream2 and then InternVL2.5-1B on real 1280x720 camera frames.
+
+**Moondream2 via transformers/PyTorch (vikhyatk/moondream2 rev "2025-01-09"):**
+- Load: ~40s from cache. Inference: ~20s/frame warm on MPS (token-by-token generation + MPS sync overhead per `.item()` call). Unusable.
+- transformers 5.x breaks the `trust_remote_code` path (`all_tied_weights_keys` API change). Downgrade to `transformers<5.0` is required. But even then, latency is unacceptable.
+
+**mlx-vlm is the right backend for VLMs on Apple Silicon.** transformers/PyTorch for generation is crippled by per-token MPS sync overhead. mlx-vlm uses Metal natively with no sync overhead.
+
+**InternVL2.5-1B-4bit via mlx-vlm (`mlx-community/InternVL2_5-1B-4bit`):**
+- Load: ~20-40s from cache (~2 GB weights)
+- First frame (JIT cold): ~5-9s
+- Warm frames: 1.6-3.0s with `max_tokens=10`; ~800ms with `max_tokens=5`
+- **max_tokens is the dominant latency lever.** Generation at ~3-5 tok/s means 10 tokens = 2-3s, 5 tokens = ~800ms.
+- **Image resolution doesn't affect token count.** Full 1280x720 produces the same `prompt_tokens=36` as 224x224 or 448x448 — mlx-vlm's InternVL2 processor uses a fixed compact visual representation regardless of input size. Do NOT resize camera frames before inference; it doesn't help latency and may reduce accuracy.
+- **Label truncation at max_tokens=5:** "CUTTING_VEGETABLES" gets cut to "CUTTING_VEGET" (7 tokens). max_tokens=10 captures all labels reliably.
+
+**Phase A exit gate (<1000ms, ≥1fps) is NOT met on real camera input with safe max_tokens=10.**
+Best achievable warm latency: ~800ms with max_tokens=5 (but truncation risk).
+Discussion needed: whether 0.4fps (max_tokens=10) is acceptable for kitchen activity detection, or whether to pursue label token optimization.
+
+**Dependency note:** mlx-vlm requires transformers>=5.0 as a transitive dep (conflicts with the moondream2 path). Since moondream2 is disqualified for latency anyway, this isn't a problem — but be aware: installing mlx-vlm will upgrade transformers to 5.x. Running moondream2 in the same environment as mlx-vlm will fail at `load()` time (trust_remote_code breaks under transformers 5.x). The adapters import lazily inside load() so the script won't crash at startup — just switch adapters with `--adapter`.
+
+**Label token optimization (2026-02-27):** Shortened scenario labels to single-token words (CUT/WASH/IDLE/NONE → ~1 token each) so max_tokens=5 safely captures all labels. v1 compound labels (CUTTING_VEGETABLES = ~6 tokens, WASHING_PRODUCE = ~5 tokens) were truncated at max_tokens=5. Also removed "followed by explanation" from prompt instruction — the explanation sentence cost 5-15 output tokens per call at ~3-5 tok/s with no benefit (parse logic only reads the label token). These changes allow max_tokens=5 to be used reliably, keeping target warm latency ~800ms rather than ~2s.
+
+---
+
 ### 2026-02-24 — Phase A Layer 1-2 Implementation (Flywheel Gap Retrospective)
 
 Three gaps surfaced *during implementation* that should have been caught *during planning*. Pattern and root cause documented here so future phases catch them earlier.

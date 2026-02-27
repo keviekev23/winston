@@ -22,10 +22,9 @@ dependencies = [
     # Speaker ID (Phase A Layer 3)
     "resemblyzer",
 
-    # Vision (Phase A Layer 4)
-    "transformers>=5.0",
-    "torchvision",
-    "num2words",     # required by SmolVLM processor
+    # Vision (Phase A VLM) — primary: InternVL2.5-1B via mlx-vlm (~1fps warm on M2 Pro)
+    # mlx-vlm brings transformers as a transitive dep (5.x compatible)
+    "mlx-vlm",
     "Pillow",
     "opencv-python",
 

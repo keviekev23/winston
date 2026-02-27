@@ -45,6 +45,15 @@ Winston ("Sous Chef") is a personalized household AI assistant research prototyp
 - Tests for core pipelines; don't need 100% coverage
 - Atomic, descriptive git commits — one logical change per commit
 
+## Session Startup Protocol
+
+At the start of every session, before writing any code:
+1. Read the current phase doc (`docs/phases/phase_[x].md`) — what is validated vs. still open? What is the exit gate?
+2. Read `docs/LESSONS_LEARNED.md` — any recent operational findings that affect the current task?
+3. Read `docs/iteration_framework.md` — what evaluation process is in flight?
+
+This ensures every session builds on existing exploration rather than re-deriving from scratch.
+
 ## When Making Decisions
 
 1. **Check the relevant doc first.** `STEERING.md` for architecture, `docs/architecture/*.md` for subsystem details, `docs/phases/*.md` for current phase scope.
@@ -60,7 +69,8 @@ Winston ("Sous Chef") is a personalized household AI assistant research prototyp
 - **Latency assumptions:** The 2-LLM architecture only works if the cerebellum is <500ms. Flag unexpected latency immediately.
 - **Prompt brittleness on small models:** SmolLM2-1.7B can be brittle. Keep cerebellum prompts simple. Simplify before adding complexity.
 - **Scope creep between phases:** Each phase validates specific assumptions. Resist adding later-phase features. Note the idea, defer it, stay focused.
-- **VLM overconfidence:** Edge VLM is for change detection and general scene description, NOT complex visual reasoning. That's the cerebrum's job.
+- **VLM overconfidence:** Edge VLM is for targeted event detection (cerebrum-directed), NOT complex visual reasoning. That's the cerebrum's job. General scene description with SmolVLM2 was evaluated and found insufficient (see phase_a_perception.md Evaluated Assumptions).
+- **VLM prompt complexity:** Moondream2 (1.86B) responds best to direct classification prompts with a short, explicit label list. Do not ask it to reason, count precisely, or identify fine-grained object states.
 
 ## Lessons Learned
 

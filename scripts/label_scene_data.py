@@ -1,31 +1,43 @@
 """
-Annotate live-collected scene images with Claude ground truth.
+Label scene images — two modes:
 
-For each JPEG + SmolVLM2 JSON sidecar in data/collection/images/:
-  - Send the JPEG to Claude claude-sonnet-4-6 with a structured labeling prompt
-  - Save the annotation as {timestamp}_gt.json alongside the original
-  - Flag discrepancies: activity mismatches, missing objects, hallucinated objects
-  - Print a summary of disagreement patterns (useful for identifying failure modes)
+MODE 1 (--manual): Manual verification of detect_event.py captures.
+  For each JPEG + detection JSON in data/detection/:
+    - Open the image in macOS Preview
+    - Prompt "Event detected correctly? [y/n/skip]"
+    - Save _verified.json for use by evaluate_vlm.py
+  Run with:
+    python scripts/label_scene_data.py --manual
+    python scripts/label_scene_data.py --manual --dir data/detection/
+    python scripts/label_scene_data.py --manual --force   # re-verify already-verified
 
-Run with:
+MODE 2 (default): Annotate live-collected SmolVLM2 scene images with Claude ground truth.
+  For each JPEG + SmolVLM2 JSON sidecar in data/collection/images/:
+    - Send the JPEG to Claude claude-sonnet-4-6 with a structured labeling prompt
+    - Save the annotation as {timestamp}_gt.json alongside the original
+    - Flag discrepancies: activity mismatches, missing objects, hallucinated objects
+  Run with:
     python scripts/label_scene_data.py              # annotate all un-annotated images
     python scripts/label_scene_data.py --limit 20   # only the 20 most recent
     python scripts/label_scene_data.py --dry-run    # show what would be sent, no API calls
     python scripts/label_scene_data.py --report     # summarize existing annotations only
 
-This is analogous to Whisper Large-v3 pseudo-labeling in the audio flywheel:
-it uses a larger, more capable model to generate the ground truth that the
-smaller edge model is trained/evaluated against.
+NOTE (2026-02): Mode 2 (cloud annotation) is superseded by Mode 1 (manual verification)
+for Phase A VLM evaluation, given smaller sample sizes from targeted detect_event.py runs.
+Mode 2 remains available for the original SmolVLM2 collection flywheel workflow.
 """
 
 import argparse
 import base64
 import json
+import subprocess
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 COLLECTION_DIR = Path("data/collection/images")
+DETECTION_DIR  = Path("data/detection")
 
 BOLD   = "\033[1m"
 RESET  = "\033[0m"
@@ -60,7 +72,111 @@ Criteria:
 
 
 # ---------------------------------------------------------------------------
-# Annotation
+# MODE 1: Manual verification (Phase A event detection evaluation)
+# ---------------------------------------------------------------------------
+
+def run_manual_verification(detection_dir: Path, force: bool) -> None:
+    """
+    Walk through detect_event.py captures and manually verify each one.
+    Opens each JPEG in Preview, asks y/n, saves _verified.json for evaluate_vlm.py.
+    """
+    if not detection_dir.exists():
+        print(f"Detection directory not found: {detection_dir}")
+        print("Run detect_event.py to capture events first.")
+        sys.exit(1)
+
+    candidates = []
+    for jpg in sorted(detection_dir.glob("*.jpg")):
+        detection_json = jpg.with_name(jpg.stem + "_detection.json")
+        verified_json  = jpg.with_name(jpg.stem + "_verified.json")
+        if not detection_json.exists():
+            continue
+        if verified_json.exists() and not force:
+            continue
+        candidates.append((jpg, detection_json, verified_json))
+
+    if not candidates:
+        msg = "No detection captures found" if force else "No unverified captures found"
+        print(f"{msg} in {detection_dir}")
+        if not force:
+            print("Use --force to re-verify existing ones.")
+        return
+
+    print(f"\n{BOLD}Winston Manual Verification — {len(candidates)} images{RESET}")
+    print("  Opens each image in Preview. Enter y/n/skip in terminal.\n")
+
+    verified = skipped = errors = 0
+
+    for jpg_path, detection_path, verified_path in candidates:
+        with open(detection_path) as f:
+            detection = json.load(f)
+
+        event_id       = detection.get("event_id", "unknown")
+        detected_label = detection.get("detected_label", "?")
+        latency_ms     = detection.get("latency_ms")
+        scenario       = detection.get("scenario", "")
+
+        print(f"  {BOLD}{jpg_path.name}{RESET}")
+        lat_str = f"  |  Latency: {latency_ms:.0f}ms" if latency_ms else ""
+        print(f"    Event: {event_id}  |  Label: {detected_label}{lat_str}")
+
+        try:
+            subprocess.run(["open", "-a", "Preview", str(jpg_path)], check=False)
+        except Exception:
+            print(f"    [Could not open Preview — check image manually: {jpg_path}]")
+
+        while True:
+            try:
+                answer = input(f"    Event '{event_id}' detected correctly? [y/n/skip]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\nInterrupted — saving progress so far.")
+                return
+
+            if answer in ("y", "yes"):
+                verified_correct: bool | None = True
+                break
+            elif answer in ("n", "no"):
+                verified_correct = False
+                break
+            elif answer in ("s", "skip", ""):
+                verified_correct = None
+                break
+            else:
+                print("    Please enter y, n, or skip")
+
+        if verified_correct is None:
+            print(f"    → Skipped\n")
+            skipped += 1
+            continue
+
+        record = {
+            "image_path":       str(jpg_path),
+            "scenario":         scenario,
+            "event_id":         event_id,
+            "detected_label":   detected_label,
+            "latency_ms":       latency_ms,
+            "verified_correct": verified_correct,
+            "verified_by":      "kevin_manual",
+            "timestamp":        datetime.now(timezone.utc).isoformat(),
+        }
+
+        try:
+            with open(verified_path, "w") as f:
+                json.dump(record, f, indent=2)
+            status = f"{GREEN}✓ correct{RESET}" if verified_correct else f"{RED}✗ incorrect{RESET}"
+            print(f"    → {status}\n")
+            verified += 1
+        except Exception as e:
+            print(f"    {RED}ERROR saving:{RESET} {e}\n")
+            errors += 1
+
+    print(f"{BOLD}Done.{RESET}  verified={verified}  skipped={skipped}  errors={errors}")
+    if verified:
+        print(f"\nRun evaluation:  python scripts/evaluate_vlm.py --label phase_a_baseline")
+
+
+# ---------------------------------------------------------------------------
+# MODE 2: Cloud annotation (legacy SmolVLM2 flywheel workflow)
 # ---------------------------------------------------------------------------
 
 def annotate_image(jpeg_path: Path) -> dict:
@@ -122,10 +238,6 @@ def compute_discrepancies(smolvlm_json: dict, claude_annotation: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Report on existing annotations
-# ---------------------------------------------------------------------------
-
 def print_report(collection_dir: Path) -> None:
     gt_files = sorted(collection_dir.glob("*_gt.json"))
     if not gt_files:
@@ -183,53 +295,37 @@ def print_report(collection_dir: Path) -> None:
             print(f"    {obj}: {count}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Annotate collected scene images with Claude ground truth"
-    )
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Only annotate the N most recent images (0 = all)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be annotated without API calls")
-    parser.add_argument("--report", action="store_true",
-                        help="Print summary of existing annotations and exit")
-    parser.add_argument("--force", action="store_true",
-                        help="Re-annotate images that already have _gt.json")
-    args = parser.parse_args()
-
-    if not COLLECTION_DIR.exists():
-        print(f"Collection directory not found: {COLLECTION_DIR}")
+def run_cloud_annotation(
+    collection_dir: Path,
+    limit: int,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """MODE 2: Cloud annotation using Claude (legacy SmolVLM2 flywheel workflow)."""
+    if not collection_dir.exists():
+        print(f"Collection directory not found: {collection_dir}")
         print("Run the scene service to collect some images first.")
         sys.exit(1)
 
-    if args.report:
-        print_report(COLLECTION_DIR)
-        return
-
-    # Find JPEGs that have a SmolVLM2 sidecar
     candidates = []
-    for jpg in sorted(COLLECTION_DIR.glob("*.jpg"), reverse=True):
+    for jpg in sorted(collection_dir.glob("*.jpg"), reverse=True):
         sidecar = jpg.with_suffix(".json")
         gt_path = jpg.with_name(jpg.stem + "_gt.json")
         if not sidecar.exists():
-            continue  # no SmolVLM2 output — skip
-        if gt_path.exists() and not args.force:
-            continue  # already annotated
+            continue
+        if gt_path.exists() and not force:
+            continue
         candidates.append((jpg, sidecar, gt_path))
 
-    if args.limit:
-        candidates = candidates[: args.limit]
+    if limit:
+        candidates = candidates[:limit]
 
     if not candidates:
         print("Nothing to annotate. Use --force to re-annotate or --report to view existing.")
         return
 
     print(f"\n{BOLD}Winston Scene Labeling — {len(candidates)} images{RESET}")
-    if args.dry_run:
+    if dry_run:
         print("  [DRY RUN — no API calls]\n")
 
     annotated = errors = 0
@@ -240,12 +336,12 @@ def main() -> None:
 
         print(f"  {jpg_path.name}", end="", flush=True)
 
-        if args.dry_run:
+        if dry_run:
             print(" [would annotate]")
             continue
 
         try:
-            annotation  = annotate_image(jpg_path)
+            annotation    = annotate_image(jpg_path)
             discrepancies = compute_discrepancies(smolvlm_output, annotation)
 
             gt_record = {
@@ -277,10 +373,63 @@ def main() -> None:
             print(f"  {RED}ERROR:{RESET} {e}")
             errors += 1
 
-    if not args.dry_run:
+    if not dry_run:
         print(f"\n{BOLD}Done.{RESET}  annotated={annotated}  errors={errors}")
         if annotated:
             print(f"\nRun report:  python scripts/label_scene_data.py --report")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Label scene images: manual verification (Mode 1) or cloud annotation (Mode 2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Mode 1 — manual verification (Phase A VLM evaluation):
+  python scripts/label_scene_data.py --manual
+  python scripts/label_scene_data.py --manual --dir data/detection/ --force
+
+Mode 2 — cloud annotation (legacy SmolVLM2 flywheel):
+  python scripts/label_scene_data.py
+  python scripts/label_scene_data.py --limit 20 --dry-run
+  python scripts/label_scene_data.py --report
+        """,
+    )
+    parser.add_argument(
+        "--manual", action="store_true",
+        help="Manual verification mode (Phase A): walk through detect_event.py captures with y/n",
+    )
+    parser.add_argument(
+        "--dir", type=Path, default=DETECTION_DIR,
+        help="Directory for manual mode (default: data/detection/)",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=0,
+        help="[Mode 2] Only annotate the N most recent images (0 = all)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="[Mode 2] Show what would be annotated without API calls",
+    )
+    parser.add_argument(
+        "--report", action="store_true",
+        help="[Mode 2] Print summary of existing cloud annotations and exit",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Re-process images that already have output files",
+    )
+    args = parser.parse_args()
+
+    if args.manual:
+        run_manual_verification(args.dir, force=args.force)
+    elif args.report:
+        print_report(COLLECTION_DIR)
+    else:
+        run_cloud_annotation(COLLECTION_DIR, args.limit, args.dry_run, args.force)
 
 
 if __name__ == "__main__":

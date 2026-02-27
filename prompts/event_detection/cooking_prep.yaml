@@ -1,0 +1,63 @@
+scenario: cooking_prep_monitoring
+version: 2
+description: "Watch for active food preparation events at the counter"
+notes: >
+  v2 — Shortened labels to single-token words (CUT/WASH/IDLE/NONE) so max_tokens=5
+  safely captures all labels without truncation. InternVL2.5-1B generates at ~3-5 tok/s,
+  so every output token costs ~200-330ms. v1 labels (CUTTING_VEGETABLES, WASHING_PRODUCE,
+  IDLE_AT_COUNTER, NONE_OF_ABOVE) were 4-7 tokens each; new labels are 1 token each.
+  Also removed "followed by explanation" from prompt — explanation was unused by parse
+  logic and cost 5-15 output tokens per call at no benefit.
+  v1 — initial seed scenario. Descriptions kept concrete and visually observable.
+  Avoid abstract states ("person looks busy") — small VLMs need literal visual cues.
+  confirm_frames based on expected action duration at 1fps; calibrate from real data.
+
+events:
+  - id: cutting_vegetables
+    label: CUT
+    # v1 label: CUTTING_VEGETABLES
+    description: "a person is cutting, chopping, or slicing vegetables or food on a cutting board"
+    confirm_frames: 3
+    notes: >
+      3 frames ~= 3s at 1fps. Chopping has visual texture that takes a few frames to confirm.
+      Watch for false positives when person is stirring near the counter.
+
+  - id: washing_produce
+    label: WASH
+    # v1 label: WASHING_PRODUCE
+    description: "a person is rinsing or washing vegetables or fruit under running water at the sink"
+    confirm_frames: 2
+    notes: "2 frames — washing is visually distinct (water, sink, hands under faucet)."
+
+  - id: idle_at_counter
+    label: IDLE
+    # v1 label: IDLE_AT_COUNTER
+    description: "a person is present at the counter but not actively doing food preparation"
+    confirm_frames: 2
+    notes: "Catch transitions between active tasks."
+
+# ─── How the composite prompt is constructed at runtime ───────────────────────
+#
+# detect_event.py reads the events list above and builds:
+#
+#   "Classify the current activity in this kitchen image.
+#    Respond with EXACTLY one of these labels:
+#    - CUT: a person is cutting, chopping, or slicing vegetables or food on a cutting board
+#    - WASH: a person is rinsing or washing vegetables or fruit under running water at the sink
+#    - IDLE: a person is present at the counter but not actively doing food preparation
+#    - NONE: none of the above are clearly visible
+#
+#    Respond with the label ONLY. No explanation."
+#
+# Never hardcode the prompt here — it stays auto-generated from the events list.
+# ──────────────────────────────────────────────────────────────────────────────
+
+evaluations: []
+# Populated automatically by evaluate_vlm.py after each eval run. Format:
+# - model: moondream2
+#   label: phase_a_baseline
+#   date: 2026-02-26
+#   event_id: cutting_vegetables
+#   accuracy: 0.0        # to be measured
+#   total_samples: 0
+#   avg_latency_ms: null

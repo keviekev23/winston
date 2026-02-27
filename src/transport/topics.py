@@ -11,9 +11,11 @@ class Perception:
     SENTIMENT     = f"{PREFIX}/perception/speech/sentiment"
     VAD           = f"{PREFIX}/perception/speech/vad"
     DIARIZATION   = f"{PREFIX}/perception/speech/diarization"
-    SCENE_SNAPSHOT = f"{PREFIX}/perception/scene/snapshot"
-    SCENE_CHANGE   = f"{PREFIX}/perception/scene/change"
-    SCENE_CONTEXT  = f"{PREFIX}/perception/scene/context"   # text summary + image_path for cerebrum
+    SCENE_SNAPSHOT      = f"{PREFIX}/perception/scene/snapshot"
+    SCENE_CHANGE        = f"{PREFIX}/perception/scene/change"
+    SCENE_CONTEXT       = f"{PREFIX}/perception/scene/context"        # text summary + image_path for cerebrum
+    SCENE_DETECT_REQUEST = f"{PREFIX}/perception/scene/detect"        # cerebrum → edge VLM (Phase B+)
+    SCENE_EVENT         = f"{PREFIX}/perception/scene/event"          # edge VLM → cerebrum (confirmed event + image_path)
 
 
 class Brain:

@@ -5,48 +5,60 @@
 
 ## Goal
 
-Validate that edge models can perceive the kitchen usefully, and that the cloud fine-tuning flywheel works end-to-end.
+Was: Validate that edge models can perceive the kitchen usefully, and that the cloud fine-tuning flywheel works end-to-end. 
+New (2026-02-26): Validate edge VLM is performant enough (latency, accuracy) to detect targeted object state changes, tracking multiple at a time (see Evaluated Assumptions).
 
 ## Key Assumptions Being Tested
 
 - Whisper Small.en can transcribe kitchen speech (noisy environment, distance from mic) at acceptable accuracy
 - Speaker embedding matching can reliably identify enrolled family members in normal turn-taking
-- SmolVLM2-500M can produce useful scene descriptions from a MacBook camera angle
+- An on-device VLM with targeted prompts can detect specific kitchen events reliably at ≥1 fps
 - The confidence flagging pipeline correctly identifies low-quality outputs
-- Cloud labeling (Whisper Large-v3, GPT-4o/Claude) produces reliable pseudo-labels
-- QLoRA fine-tuning measurably improves edge model accuracy on user-specific data
+- Cloud labeling (Whisper Large-v3) produces reliable STT pseudo-labels
+- QLoRA fine-tuning measurably improves Whisper accuracy on user-specific data
 
 ## Deliverables
 
 **Complete:**
 - [x] MQTT backbone + system health + memory monitoring operational
 - [x] VAD + Whisper STT pipeline running, transcribing live speech with confidence scores
-- [x] SmolVLM2-500M scene snapshot pipeline running, producing structured scene descriptions
 - [x] Data collection daemon: logging all inference I/O with confidence scores
-- [x] Memory profiling: SmolVLM2 ~1.2 GB + Whisper ~0.5 GB active; ~3.9 GB headroom on 16 GB
+- [x] Memory profiling: ~0.5 GB Whisper active; headroom validated
 - [x] STT benchmark set + baseline evaluation (`evaluate_whisper.py`)
-- [x] Cloud upload pipeline (`upload_training_data.py` via rclone → Google Drive)
+- [x] VLM adapter package (`src/perception/vlm/`) — abstract interface + Moondream2 implementation
+- [x] Event detection script (`scripts/detect_event.py`) — scenario-driven, temporal confirmation
+- [x] Seed scenario YAML (`prompts/event_detection/cooking_prep.yaml`) + prompts folder
+- [x] Manual verification workflow (`scripts/label_scene_data.py --manual`)
+- [x] VLM evaluation script (`scripts/evaluate_vlm.py`) — accuracy + latency per event
 
-**In progress / next:**
+**Punted:**
 - [ ] Voice enrollment + speaker diarization (`diarization.enabled: false` until enrollment complete)
 - [ ] First real-data cooking collection session — audio + visual
+- [ ] Cloud upload pipeline (`upload_training_data.py` via rclone → Google Drive)
 - [ ] First QLoRA fine-tuning cycle for Whisper (record before/after WER per speaker)
-- [ ] Scene schema tier list calibrated from ≥1 collection session (see Flywheel section below)
 - [ ] Per-speaker WER tracking in `evaluate_whisper.py` *(blocked until June enrolled)*
-- [ ] Debug overlay: real-time MQTT message viewer alongside eyes UI
+
+**In progress / next:**
+- [x] Label token optimization — short labels (CUT/WASH/IDLE/NONE) + prompt "label ONLY" (v2 YAML)
+- [x] `--benchmark-latency N` mode in `detect_event.py` — explicit clean-env latency measurement
+- [ ] **Run `--benchmark-latency 20` with all apps closed** — record definitive latency baseline
+- [ ] **Lock on VLM model** — run detection sessions, verify, evaluate, confirm ≥1 fps + accuracy
 
 ## Success Criteria
 
+- Moondream2 detection latency < 1000ms/frame (≥1 fps) — measured via `evaluate_vlm.py`
+- Manual verification shows reliable event detection for primary events in `cooking_prep.yaml`
+- VLM model locked for Phase B (or InternVL2-1B activated if Moondream2 fails)
+
+**Punted:**
 - STT latency < 2s from end of utterance to transcript available
 - Speaker identification accuracy > 80% in normal turn-taking (non-overlapping speech)
-- Scene snapshot processing < 3s per frame (met: ~32s per frame — see LESSONS_LEARNED 2026-02-26)
 - At least one fine-tuning cycle shows measurable improvement on user-specific test set
 - Memory usage stable (no leaks) over 30+ minute sustained operation
-- Clear understanding of what the VLM can/cannot detect → informs scene schema design
 
 ---
 
-## Flywheel Iteration Design
+## STT Flywheel
 
 ### Core Principle: Benchmark and Collection Are Strictly Separate
 
@@ -55,14 +67,7 @@ Validate that edge models can perceive the kitchen usefully, and that the cloud 
 | **Benchmark** | `data/benchmark/` | Fixed, deliberately recorded, verified GT | WER/accuracy measurement only — **never training** |
 | **Collection** | `data/collection/` | Real kitchen usage, pseudo-labeled | Training only — **never evaluation** |
 
-If benchmark failures ever feed into training, you're optimizing to the test set. Benchmark WER drops
-but real-world quality doesn't improve.
-
----
-
-### STT Flywheel
-
-#### Per-cycle procedure
+### Per-cycle procedure
 ```
 1. Collect real kitchen audio across 1-4 cooking sessions (perception service running)
 2. python scripts/upload_training_data.py --all    → sync WAV+JSON to Google Drive
@@ -74,7 +79,7 @@ but real-world quality doesn't improve.
    If any speaker regressed → collect more from that speaker, re-run cycle
 ```
 
-#### Per-speaker WER tracking
+### Per-speaker WER tracking
 
 Current benchmark is Kevin-only. When June is enrolled:
 1. Record ~15 benchmark utterances in June's voice (easy/medium/hard tiers)
@@ -82,74 +87,149 @@ Current benchmark is Kevin-only. When June is enrolled:
 3. After each cycle: check Kevin WER, June WER, overall separately
 4. If a cycle improves Kevin but degrades June → training data is imbalanced → collect more June utterances
 
-Until diarization is enabled, all collection is `speaker_id: null` and fine-tuning is speaker-agnostic.
-
-#### Benchmark maintenance triggers
+### Benchmark maintenance triggers
 
 1. **New speaker enrolled** → record ~15 benchmark utterances for that speaker; add to benchmark
-2. **Benchmark WER < 5%** (model saturated on current items) → add harder items
+2. **Benchmark WER < 5%** → add harder items
 3. **Real-world WER diverges from benchmark WER by >5%** → audit benchmark for staleness
-
-Benchmark expansion does NOT create training data — it only extends coverage for measurement.
 
 ---
 
-### VLM Flywheel
+## VLM Evaluation: Targeted Event Detection
 
-#### Per-cycle procedure
+### Paradigm
+
+VLM is **cerebrum-directed**: given a targeted classification prompt from a scenario YAML,
+it classifies each frame and confirms when an event accumulates N consecutive detections.
+See `STEERING.md` for the full integration design.
+
+### Tools
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/detect_event.py` | Run event detection with a scenario YAML, beep + save on trigger |
+| `scripts/label_scene_data.py --manual` | Manually verify captured images (y/n) |
+| `scripts/evaluate_vlm.py` | Compute accuracy + latency from verified images |
+| `prompts/event_detection/` | Scenario YAMLs — versioned evaluation artifacts, never delete |
+
+### VLM Evaluation Cheatsheet
+
+> **IMPORTANT:** If the evaluation process flow changes (new scripts, new output directories,
+> new steps), update this cheatsheet BEFORE the change is merged. A new session should be
+> able to follow this cold without reading any other file.
+
+#### 0. Prerequisites (one-time setup)
+```bash
+# Verify InternVL2.5-1B loads correctly (active model)
+python -c "from src.perception.vlm.internvl2 import InternVL2Adapter; a = InternVL2Adapter(); a.load(); print('OK'); a.unload()"
+
+# Verify Moondream2 loads correctly (secondary candidate — needs transformers<5.0)
+# NOTE: Moondream2 and mlx-vlm (InternVL2 backend) cannot coexist in the same venv.
+#       Moondream2 requires transformers<5.0; mlx-vlm requires transformers>=5.0.
+#       Run Moondream2 tests in a separate environment if needed.
+python -c "from src.perception.vlm.moondream import MoondreamAdapter; a = MoondreamAdapter(); a.load(); print('OK'); a.unload()"
+
+# Verify camera is accessible
+python -c "from src.perception.camera import Camera; c = Camera(); c.open(); f = c.capture(); print(f.size); c.close()"
 ```
-1. Collect scene images (scene service running during cooking sessions)
-2. python scripts/label_scene_data.py           → Claude annotates objects/description
-3. python scripts/review_scene_labels.py        → Kevin reviews/corrects activity labels (~2 min for 60 images)
-4. python scripts/label_scene_data.py --report  → check per-category accuracy
-5. Update schema tier list based on precision/recall results (see Schema Tiers below)
-6. Note new scenarios not yet in benchmark (multi-person, new equipment) → add to backlog
-7. When volume > 200 corrected images → consider QLoRA fine-tune cycle for SmolVLM2
+
+#### 0.5. Latency benchmark (REQUIRED before locking VLM model)
+> **⚠️ Close all other applications first.** Concurrent load invalidates measurements.
+> This is the only valid source of Phase A exit gate latency numbers.
+```bash
+# InternVL2.5-1B (active candidate)
+python scripts/detect_event.py \
+  --scenario prompts/event_detection/cooking_prep.yaml \
+  --adapter internvl2_1b \
+  --benchmark-latency 20
+
+# Moondream2 (if evaluating as alternative — separate venv required)
+python scripts/detect_event.py \
+  --scenario prompts/event_detection/cooking_prep.yaml \
+  --adapter moondream2 \
+  --benchmark-latency 20
 ```
+- Prints a clean-environment confirmation prompt
+- Runs 1 JIT warmup frame (excluded from stats)
+- Reports mean/min/max/p50/p90 latency and fps estimate
+- Record results in `docs/LESSONS_LEARNED.md` before locking the model
 
-#### Annotation strategy (hybrid: Kevin + Claude)
+#### 1. Run an event detection session
+```bash
+python scripts/detect_event.py \
+  --scenario prompts/event_detection/cooking_prep.yaml \
+  [--interval 1.0]           # seconds between frames (default: 1.0)
+  [--adapter internvl2_1b]   # model adapter (default: internvl2_1b); also: moondream2
+  [--confirm-frames N]       # override per-event confirm_frames from YAML
+```
+- Logs per-frame: detected label, confidence, latency_ms
+- Beeps + prints "EVENT TRIGGERED: {event_id}" when confirm_frames accumulated
+- Saves JPEG + `_detection.json` to `data/detection/`
+- Exits after first confirmed event — re-run to capture more
 
-Kevin has privileged information Claude lacks — he was physically present during cooking.
+#### 2. Manually inspect saved images
+```bash
+python scripts/label_scene_data.py --manual [--dir data/detection/]
+```
+- Opens each JPEG in Preview (macOS)
+- Prompts: `Event '{event_id}' detected correctly? [y/n/skip]:`
+- Saves `*_verified.json` alongside each image
 
-| Signal | Who annotates | Why |
-|--------|-------------|-----|
-| **Activity label** | Kevin (via `review_scene_labels.py`) | He knows what he was doing at minute 23. 2 min for 60 images. |
-| **Objects** | Claude (via `label_scene_data.py`) | Better than memory for specific visible items in a JPEG. |
-| **Description** | Claude | Used as context, not GT. |
+#### 3. Run evaluation report
+```bash
+python scripts/evaluate_vlm.py [--label phase_a_baseline] [--adapter internvl2_1b]
+# also valid: --adapter moondream2
+```
+- Reads all `*_verified.json` files from `data/detection/`
+- Prints per-scenario, per-event accuracy + avg latency_ms + estimated fps
+- Saves to `data/scene_benchmark/evals/{timestamp}_{adapter}_{label}.json`
+- Updates `evaluations[]` in each scenario YAML
+- Note: latency figures in the report are from detection sessions (not clean-environment
+  benchmarks) — use `--benchmark-latency` output for exit gate decisions
 
-Ground truth resolution: `kevin_activity` wins over `claude_annotation.activity` when set.
+#### 4. Review results
+- **Console:** Accuracy table + fps estimate + Phase A exit gate assessment
+- **Eval JSON:** `data/scene_benchmark/evals/` — compare with `--compare before.json after.json`
+- **Scenario YAMLs:** `evaluations[]` grows longitudinally — full history of what was tried
 
-For cycle 2+ (hundreds of images): Claude annotates → Kevin spot-checks `--report` output →
-corrects only systematic errors.
+#### 5. Iterate a prompt
+1. Edit event `description` in scenario YAML, bump `version`, add a note explaining why
+2. Re-run detect → label → evaluate
+3. Compare: `python scripts/evaluate_vlm.py --compare evals/before.json evals/after.json`
 
-**Validating Claude accuracy:** `--report` surfaces patterns (e.g., Claude consistently labels
-active cooking as "idle" because the person is out of frame). Spot-checking 10-15 images against
-memory confirms. Where Claude is systematically wrong → Kevin corrections are the signal.
+#### Exit Gate
+Lock VLM model when:
+- **`--benchmark-latency` confirms mean < 1000ms** in a clean-environment run (≥1 fps)
+  — do NOT use latency from regular detection sessions (concurrent load skews numbers)
+- Manual verification accuracy acceptable for primary events (set threshold from first data)
+- At least one scenario YAML has `evaluations[]` populated
 
-#### Scene schema tiers
+---
 
-Tiers are empirically calibrated from collection data — not assumed. After each cycle,
-`label_scene_data.py --report` gives per-object recall and precision.
+## Evaluated Assumptions
 
-| Tier | Criteria | Brain behavior |
-|------|----------|---------------|
-| **1 — Trusted** | Activity accuracy > 80%; object recall > 60% and precision > 70% | Emit directly, brain acts on it |
-| **2 — Flagged** | Below Tier 1 thresholds, or new/untested | Emit with `low_confidence: true`; brain treats as weak signal |
-| **3 — On-demand** | Complex visual reasoning (what kind of vegetable, is stove on, how many people) | Not emitted; cerebrum loads `image_path` and queries Claude directly |
+### SmolVLM2-500M General Scene Understanding — 2026-02
 
-Initial hypotheses for Tier 1 (validate from data):
-- Broad activity state (cooking vs idle) when scene is unambiguous
-- Person presence (0 vs ≥1)
-- Change detection (pixel-level MAD — not VLM-dependent, always reliable)
-- Large static objects: stove, refrigerator, counter, sink
+**Original assumption:** On-device VLM (SmolVLM2-500M) may be accurate enough for semantic scene understanding.
 
-#### Benchmark maintenance triggers
+**What we did:** Collected kitchen scene images during cooking sessions. Ran SmolVLM2 scene descriptions on collected images. Manually reviewed outputs for quality.
 
-1. **New person in kitchen regularly** → add multi-person scenes to `data/scene_benchmark/`, measure accuracy degradation
-2. **New equipment / objects** → add to `_KITCHEN_OBJECTS` in `scene.py` + `label_scene_data.py`; new objects start Tier 2 until calibrated
-3. **Activity accuracy drops on `evaluate_scene.py`** → audit new scenarios, expand benchmark
+**Outcome:** Description quality was insufficient for reliable activity/object classification. Critically, inference runs at ~32s/frame on M2 Pro MPS — incompatible with the ≥1 fps target for real-time event detection. SmolVLM2 fails both on quality and latency.
 
-#### Fine-tuning SmolVLM2
+**Impact:**
+1. Shifted to cerebrum-directed targeted event detection paradigm
+2. SmolVLM2 disqualified — Moondream2 (1.86B, ~1-3 fps on MPS) is Phase A primary candidate
+3. SmolVLM2 adapter not implemented (disqualified before adapter work began)
+4. VLM adapter abstraction (`src/perception/vlm/`) built to enable fast model swapping
 
-Fine-tuning is a later milestone (200+ corrected images needed). Phase A goal is schema calibration,
-not model improvement. The schema tier list IS the Phase A VLM deliverable.
+**Relevant data:** `data/collection/images/` (collected samples), `scripts/label_scene_data.py --report`
+
+### Local TTS — 2026-02
+
+**Original assumption:** Local TTS would be used for Phase A/B voice output.
+
+**What we did:** Phase A was perception-focused; TTS was deferred from Phase A scope.
+
+**Outcome:** No local TTS code was built. Local TTS adds memory pressure (~500MB-1GB) and requires significant quality-to-latency tuning — not worth the effort given cloud TTS availability.
+
+**Impact:** TTS moved to Phase B as a cloud adapter (provider to be selected at Phase B start — evaluate ElevenLabs, Google TTS, and Kokoro). No local TTS in Phase A or B.
